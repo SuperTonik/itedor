@@ -2,5 +2,6 @@
 Simple text editor made with the purpose of learning more about systems programming.
 
 ## Compiling
-Withe the gcc:
+With the gcc:
+
 `gcc src/main.c`
