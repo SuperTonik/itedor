@@ -11,6 +11,7 @@
 
 /* DEFINES */
 
+#define VERSION "0.1"				// The most important definition: version of the program.
 #define CTRL_KEY(k) ((k) & 0x1f)	// Macro to set upper 3 bits of k to 0
 #define ABUF_INIT {NULL, 0}			// Macro for an empty string buffer.
 
@@ -18,6 +19,7 @@
 
 struct editorConfig
 {
+	int cx, cy;
 	int screenrows;
 	int screencols;
 	struct termios orig_termios;
@@ -173,6 +175,29 @@ void abFree(struct abuf *ab) {
 
 /* INPUT */
 
+void editorMoveCursor(char key) {
+	/*
+		Function to map key press to cursor movement.
+
+		Parameters:
+			key	:	Key pressed.
+	*/
+	switch (key) {
+		case 'a':
+			E.cx--;
+			break;
+		case 'd':
+			E.cx++;
+			break;
+		case 'w':
+			E.cy--;
+			break;
+		case 's':
+			E.cy++;
+			break;
+	}
+}
+
 void editorProcessKeypress() {
 	/*
 		Handle the keypress returned by editorReadKey().
@@ -185,6 +210,13 @@ void editorProcessKeypress() {
 			write(STDOUT_FILENO, "\x1b[2J", 4);
 			write(STDOUT_FILENO, "\x1b[H", 3);
 			exit(EXIT_SUCCESS);		
+			break;
+		
+		case 'w':
+		case 's':
+		case 'a':
+		case 'd':
+			editorMoveCursor(c);
 			break;
 	}
 }
@@ -203,7 +235,23 @@ void editorDrawRows(struct abuf *ab) {
 
 	int y;
 	for (y = 0; y < E.screenrows; y++) {
-		abAppend(ab, "~", 1);
+		if (y == E.screenrows / 3) {
+			char welcome[80];
+			int welcomelen = snprintf(welcome, sizeof(welcome),
+				"Itedor editor -- version %s", VERSION);
+			if (welcomelen > E.screencols) welcomelen = E.screencols;
+			int padding = (E.screencols - welcomelen) / 2;
+			if (padding) {
+				abAppend(ab, "~", 1);
+				padding--;	
+			}
+			while (padding--) abAppend(ab, " ", 1);
+			abAppend(ab, welcome, welcomelen);
+		} else {
+			abAppend(ab, "~", 1);
+		}
+
+		abAppend(ab, "\x1b[K", 3);
 		if (y < E.screenrows - 1) {
 			abAppend(ab, "\r\n", 2);
 		}
@@ -213,9 +261,9 @@ void editorDrawRows(struct abuf *ab) {
 void editorRefreshScreen() {
 	/*
 		The following are VT100 escape sequences:
-
-			"\x1b[2J" : Clear entire screen.
-			"\x1b[H"  : Reposition cursor to top-left corner. 
+			"\x1b[H"  	: Reposition cursor to top-left corner. 
+			"\x1b[?25l"	: Hide cursor
+			"\x1b[?25h"	: Show cursor
 
 		Alternative would be to use something like ncurses for increased support
 		of different terminals.
@@ -223,12 +271,17 @@ void editorRefreshScreen() {
 	
 	struct abuf ab = ABUF_INIT;
 
-	abAppend(&ab, "\x1b[2J", 4);
+	abAppend(&ab, "\x1b[?25l", 6);		// Hide cursor before refreshing to prevent flickering.
 	abAppend(&ab, "\x1b[H", 3);
 
 	editorDrawRows(&ab);				// Draw buffer.
 
-	abAppend(&ab, "\x1b[H", 3);			// Reposition cursor to top-left corner.
+	// Move cursor to position stored in editorConfig struct.
+	char buffer[32];
+	snprintf(buffer, sizeof(buffer), "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
+	abAppend(&ab, buffer, strlen(buffer));
+
+	abAppend(&ab, "\x1b[?25h", 6);		// Reveal cursor
 
 	write(STDOUT_FILENO, ab.b, ab.len);	// Write all of buffer at once.
 	abFree(&ab);
@@ -241,6 +294,10 @@ void initEditor() {
 		Initalize editor, ie. initalize all fields in the editor state
 		variable.
 	*/
+
+	E.cx = 0;
+	E.cy = 0;
+
 	if (getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize");
 }
 
